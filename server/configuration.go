@@ -4,10 +4,8 @@ import (
 	"reflect"
 
 	"encoding/json"
-	"fmt"
 
 	"github.com/pkg/errors"
-
 
 	"github.com/mattermost/mattermost-server/v5/model"
 	"github.com/mattermost/mattermost-server/v5/plugin"
@@ -22,64 +20,41 @@ import (
 // strategy used in this plugin is to guard a pointer to the configuration, and clone the entire
 // struct whenever it changes. You may replace this with whatever strategy you choose.
 type configuration struct {
-	// The user to use as part of the demo plugin, created automatically if it does not exist.
+	// The user to use as part of the read-only plugin, created automatically if it does not exist.
 	Username string
 
-	// The channel to use as part of the demo plugin, created for each team automatically if it does not exist.
+	// The channel to use as part of the read-only plugin, created for each team automatically if it does not exist.
 	ChannelName string
 
-	// LastName is the last name of the demo user.
-	LastName string
-
-	// TextStyle controls the text style of the messages posted by the demo user.
+	// TextStyle controls the text style of the messages posted by the read-only user.
 	TextStyle string
-
-	// RandomSecret is a generated key that, when mentioned in a message by a user, will trigger the demo user to post the 'SecretMessage'.
-	RandomSecret string
-
-	// SecretMessage is the message posted to the demo channel when the 'RandomSecret' is pasted somewhere in the team.
-	SecretMessage string
-
-	// EnableMentionUser controls whether the 'MentionUser' is prepended to all demo messages or not.
-	EnableMentionUser bool
-
-	// MentionUser is the user that is prepended to demo messages when enabled.
-	MentionUser string
-
-	// SecretNumber is an integer that, when mentioned in a message by a user, will trigger the demo user to post a message.
-	SecretNumber int
 
 	// disabled tracks whether or not the plugin has been disabled after activation. It always starts enabled.
 	disabled bool
 
-	// demoUserId is the id of the user specified above.
-	demoUserId string
+	// readonlyUserID is the id of the user specified above.
+	readonlyUserID string
 
-	// demoChannelIds maps team ids to the channels created for each using the channel name above.
-	demoChannelIds map[string]string
+	// readonlyChannelIDs maps team ids to the channels created for each using the channel name above.
+	readonlyChannelIDs map[string]string
 }
 
 // Clone deep copies the configuration. Your implementation may only require a shallow copy if
 // your configuration has no reference types.
 func (c *configuration) Clone() *configuration {
-	// Deep copy demoChannelIds, a reference type.
-	demoChannelIds := make(map[string]string)
-	for key, value := range c.demoChannelIds {
-		demoChannelIds[key] = value
+	// Deep copy readonlyChannelIDs, a reference type.
+	readonlyChannelIDs := make(map[string]string)
+	for key, value := range c.readonlyChannelIDs {
+		readonlyChannelIDs[key] = value
 	}
 
 	return &configuration{
-		Username:          c.Username,
-		ChannelName:       c.ChannelName,
-		LastName:          c.LastName,
-		TextStyle:         c.TextStyle,
-		RandomSecret:      c.RandomSecret,
-		SecretMessage:     c.SecretMessage,
-		EnableMentionUser: c.EnableMentionUser,
-		MentionUser:       c.MentionUser,
-		disabled:          c.disabled,
-		demoUserId:        c.demoUserId,
-		demoChannelIds:    demoChannelIds,
+		Username:           c.Username,
+		ChannelName:        c.ChannelName,
+		TextStyle:          c.TextStyle,
+		disabled:           c.disabled,
+		readonlyUserID:     c.readonlyUserID,
+		readonlyChannelIDs: readonlyChannelIDs,
 	}
 }
 
@@ -134,26 +109,8 @@ func (p *Plugin) diffConfiguration(newConfiguration *configuration) {
 	if newConfiguration.ChannelName != oldConfiguration.ChannelName {
 		configurationDiff["channel_name"] = newConfiguration.ChannelName
 	}
-	if newConfiguration.LastName != oldConfiguration.LastName {
-		configurationDiff["lastname"] = newConfiguration.LastName
-	}
 	if newConfiguration.TextStyle != oldConfiguration.TextStyle {
 		configurationDiff["text_style"] = newConfiguration.ChannelName
-	}
-	if newConfiguration.RandomSecret != oldConfiguration.RandomSecret {
-		configurationDiff["random_secret"] = "<HIDDEN>"
-	}
-	if newConfiguration.SecretMessage != oldConfiguration.SecretMessage {
-		configurationDiff["secret_message"] = newConfiguration.SecretMessage
-	}
-	if newConfiguration.EnableMentionUser != oldConfiguration.EnableMentionUser {
-		configurationDiff["enable_mention_user"] = newConfiguration.EnableMentionUser
-	}
-	if newConfiguration.MentionUser != oldConfiguration.MentionUser {
-		configurationDiff["mention_user"] = newConfiguration.MentionUser
-	}
-	if newConfiguration.SecretNumber != oldConfiguration.SecretNumber {
-		configurationDiff["secret_number"] = newConfiguration.SecretNumber
 	}
 
 	if len(configurationDiff) == 0 {
@@ -167,33 +124,15 @@ func (p *Plugin) diffConfiguration(newConfiguration *configuration) {
 	}
 
 	for _, team := range teams {
-		demoChannelId, ok := newConfiguration.demoChannelIds[team.Id]
+		_, ok := newConfiguration.readonlyChannelIDs[team.Id]
 		if !ok {
-			p.API.LogWarn("No demo channel id for team", "team", team.Id)
+			p.API.LogWarn("No read-only channel id for team", "team", team.Id)
 			continue
 		}
 
-		newConfigurationData, jsonErr := json.Marshal(newConfiguration)
+		_, jsonErr := json.Marshal(newConfiguration)
 		if jsonErr != nil {
 			p.API.LogWarn("failed to marshal new configuration", "err", err)
-			return
-		}
-
-		fileInfo, err := p.API.UploadFile(newConfigurationData, demoChannelId, "configuration.json")
-		if err != nil {
-			p.API.LogWarn("failed to attach new configuration", "err", err)
-			return
-		}
-
-		if _, err := p.API.CreatePost(&model.Post{
-			UserId:    p.botId,
-			ChannelId: demoChannelId,
-			Message:   "OnConfigChange: loading new configuration",
-			Type:      "custom_demo_plugin",
-			Props:     configurationDiff,
-			FileIds:   model.StringArray{fileInfo.Id},
-		}); err != nil {
-			p.API.LogWarn("failed to post OnConfigChange message", "err", err)
 			return
 		}
 	}
@@ -201,7 +140,7 @@ func (p *Plugin) diffConfiguration(newConfiguration *configuration) {
 
 // OnConfigurationChange is invoked when configuration changes may have been made.
 //
-// This demo implementation ensures the configured demo user and channel are created for use
+// This read-only implementation ensures the configured read-only user and channel are created for use
 // by the plugin.
 func (p *Plugin) OnConfigurationChange() error {
 	var configuration = new(configuration)
@@ -212,23 +151,23 @@ func (p *Plugin) OnConfigurationChange() error {
 		return errors.Wrap(loadConfigErr, "failed to load plugin configuration")
 	}
 
-	configuration.demoUserId, err = p.ensureDemoUser(configuration)
+	configuration.readonlyUserID, err = p.ensureROUser(configuration)
 	if err != nil {
-		return errors.Wrap(err, "failed to ensure demo user")
+		return errors.Wrap(err, "failed to ensure read-only user")
 	}
 
-	botId, ensureBotError := p.Helpers.EnsureBot(&model.Bot{
-		Username:    "demoplugin",
-		DisplayName: "Demo Plugin Bot",
-		Description: "A bot account created by the demo plugin.",
+	botID, ensureBotError := p.Helpers.EnsureBot(&model.Bot{
+		Username:    "readonlybot",
+		DisplayName: "Read-only Bot",
+		Description: "A bot account created by the read-only plugin.",
 	}, plugin.IconImagePath("/assets/github.svg"))
 	if ensureBotError != nil {
 		return errors.Wrap(ensureBotError, "failed to ensure demo bot.")
 	}
 
-	p.botId = botId
+	p.botID = botID
 
-	configuration.demoChannelIds, err = p.ensureDemoChannels(configuration)
+	configuration.readonlyChannelIDs, err = p.ensureROChannels(configuration)
 	if err != nil {
 		return errors.Wrap(err, "failed to ensure demo channels")
 	}
@@ -240,7 +179,7 @@ func (p *Plugin) OnConfigurationChange() error {
 	return nil
 }
 
-func (p *Plugin) ensureDemoUser(configuration *configuration) (string, error) {
+func (p *Plugin) ensureROUser(configuration *configuration) (string, error) {
 	var err *model.AppError
 
 	// Check for the configured user. Ignore any error, since it's hard to distinguish runtime
@@ -251,22 +190,12 @@ func (p *Plugin) ensureDemoUser(configuration *configuration) (string, error) {
 	if user == nil {
 		user, err = p.API.CreateUser(&model.User{
 			Username:  configuration.Username,
-			Password:  "password",
-			Email:     fmt.Sprintf("%s@example.com", configuration.Username),
-			Nickname:  "Demo Day",
-			FirstName: "Demo",
-			LastName:  configuration.LastName,
+			Password:  "ROUserPassword1",
+			Email:     "rouser@zapatva.com",
+			Nickname:  "ROUser",
+			FirstName: "ROUser",
 			Position:  "Bot",
 		})
-
-		if err != nil {
-			return "", err
-		}
-	}
-
-	if user.LastName != configuration.LastName {
-		user.LastName = configuration.LastName
-		user, err = p.API.UpdateUser(user)
 
 		if err != nil {
 			return "", err
@@ -280,45 +209,31 @@ func (p *Plugin) ensureDemoUser(configuration *configuration) (string, error) {
 
 	for _, team := range teams {
 		// Ignore any error.
-		p.API.CreateTeamMember(team.Id, configuration.demoUserId)
+		p.API.CreateTeamMember(team.Id, configuration.readonlyUserID)
 	}
 
 	return user.Id, nil
 }
 
-func (p *Plugin) ensureDemoChannels(configuration *configuration) (map[string]string, error) {
+func (p *Plugin) ensureROChannels(configuration *configuration) (map[string]string, error) {
 	teams, err := p.API.GetTeams()
 	if err != nil {
 		return nil, err
 	}
 
-	demoChannelIds := make(map[string]string)
+	readonlyChannelIDs := make(map[string]string)
 	for _, team := range teams {
 		// Check for the configured channel. Ignore any error, since it's hard to
 		// distinguish runtime errors from a channel simply not existing.
 		channel, _ := p.API.GetChannelByNameForTeamName(team.Name, configuration.ChannelName, false)
 
-		// Ensure the configured channel exists.
-		if channel == nil {
-			channel, err = p.API.CreateChannel(&model.Channel{
-				TeamId:      team.Id,
-				Type:        model.CHANNEL_OPEN,
-				DisplayName: "Demo Plugin",
-				Name:        configuration.ChannelName,
-				Header:      "The channel used by the demo plugin.",
-				Purpose:     "This channel was created by a plugin for testing.",
-			})
-
-			if err != nil {
-				return nil, err
-			}
+		// Ensure the configured channel exists - if it does not we dont save it.
+		if channel != nil {
+			readonlyChannelIDs[team.Id] = channel.Id
 		}
-
-		// Save the ids for later use.
-		demoChannelIds[team.Id] = channel.Id
 	}
 
-	return demoChannelIds, nil
+	return readonlyChannelIDs, nil
 }
 
 // setEnabled wraps setConfiguration to configure if the plugin is enabled.

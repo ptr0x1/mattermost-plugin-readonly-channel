@@ -7,6 +7,8 @@ import (
 	"github.com/mattermost/mattermost-server/v5/plugin"
 )
 
+// Plugin : This plugin will make sure that only the configured bot
+// can post in a channel - making it read-only.
 type Plugin struct {
 	plugin.MattermostPlugin
 
@@ -17,14 +19,9 @@ type Plugin struct {
 	// setConfiguration for usage.
 	configuration *configuration
 
-	// BotId of the created bot account.
-	botId string
+	// botID of the created bot account.
+	botID string
 
 	// backgroundJob is a job that executes periodically on only one plugin instance at a time
 	backgroundJob *cluster.Job
-}
-
-// ServeHTTP demonstrates a plugin that handles HTTP requests by greeting the world.
-func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Request) {
-	fmt.Fprint(w, "Hello, world!")
 }

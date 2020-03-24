@@ -12,10 +12,10 @@ var manifest *model.Manifest
 
 const manifestStr = `
 {
-  "id": "com.mattermost.plugin-starter-template",
-  "name": "Plugin Starter Template",
-  "description": "This plugin serves as a starting point for writing a Mattermost plugin.",
-  "version": "0.1.0",
+  "id": "com.mattermost.plugin-readonly-channel",
+  "name": "Read-Only Channel",
+  "description": "This plugin allows you to set a channel as read-only, allowing only a specified user to post.",
+  "version": "0.2.1",
   "min_server_version": "5.12.0",
   "server": {
     "executables": {
@@ -25,13 +25,49 @@ const manifestStr = `
     },
     "executable": ""
   },
-  "webapp": {
-    "bundle_path": "webapp/dist/main.js"
-  },
   "settings_schema": {
-    "header": "",
+    "header": "Header: Configure your read-only channel settings below",
     "footer": "",
-    "settings": []
+    "settings": [
+      {
+        "key": "ChannelName",
+        "display_name": "Channel Name",
+        "type": "text",
+        "help_text": "The channel where you want to setup read-only access.",
+        "placeholder": "readonly_plugin",
+        "default": "readonly_plugin"
+      },
+      {
+        "key": "Username",
+        "display_name": "Username",
+        "type": "username",
+        "help_text": "The name of the user that is allowed to post in read-only channel.",
+        "placeholder": "readonly_user",
+        "default": "readonly_user"
+      },
+      {
+        "key": "TextStyle",
+        "display_name": "Text Style",
+        "type": "dropdown",
+        "help_text": "Change the text style of the messages posted by this plugin",
+        "placeholder": "",
+        "default": "",
+        "options": [
+          {
+            "display_name": "none",
+            "value": ""
+          },
+          {
+            "display_name": "italics",
+            "value": "_"
+          },
+          {
+            "display_name": "bold",
+            "value": "**"
+          }
+        ]
+      }
+    ]
   }
 }
 `
